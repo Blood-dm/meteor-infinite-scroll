@@ -3,7 +3,9 @@ This is a fork of https://github.com/abecks/meteor-infinite-scroll
 Watch the CHANGELOG.md for fixes/features
 
 **Enables infinite scrolling at the template level**. This package allows you to increment the `limit` parameter of a MongoDB query as the user scrolls down the page. This allows Meteor to use the Oplog Observe Driver for your query, as well as leaving you in control of your publications.
-**External API requests are also possible**
+
+**External API requests are also possible.**
+
 ## Usage:
 
 Call `this.infiniteScroll` in the `created` or `rendered` functions for your template.
@@ -43,7 +45,8 @@ Template.comments.created = function() {
 If you don't use an external API:
 
 Create a publication on the server:
-Note that you need to add the Counts pub!
+
+**Note that you need to add the Counts pub!**
 
 ```js
 if(Meteor.isServer){
@@ -83,7 +86,9 @@ Render your data as usual. Render the `{{> infiniteScroll }}` template after you
 > Infinite Scroll will increase the `limit` of the subscription as the `{{> infiniteScroll }}` template approaches the viewport.
 
 Provide data to the template as you usually would. Use `infiniteReady()` like you would use `subscriptionsReady()` on the template instance.
-Note: for offline support with ground:db just return a Cursor without check.
+
+**Note: for offline support with ground:db just return a Cursor without check.**
+
 ```js
 Template.comments.helpers({
   comments: function() {
@@ -151,15 +156,15 @@ Template.comments.helpers({
 ### The JSON response from the url "https://www.comments.com/api/comments&from=0&till=5":
 ```json
 {
-    status: "ok",
-    statuscode: "1",
-    content: [
+    "status": "ok",
+    "statuscode": "1",
+    "content": [
         {
-            content: "Hello API",
-            author: "Server"
+            "content": "Hello API",
+            "author": "Server"
         },
         {
-            content: "Hey Server",
+            "content": "Hey Server",
             author: "API"
         }
     ]
