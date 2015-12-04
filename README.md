@@ -3,7 +3,7 @@ This is a fork of https://github.com/abecks/meteor-infinite-scroll
 Watch the CHANGELOG.md for fixes/features
 
 **Enables infinite scrolling at the template level**. This package allows you to increment the `limit` parameter of a MongoDB query as the user scrolls down the page. This allows Meteor to use the Oplog Observe Driver for your query, as well as leaving you in control of your publications.
-
+**External API requests are also possible**
 ## Usage:
 
 Call `this.infiniteScroll` in the `created` or `rendered` functions for your template.
@@ -13,7 +13,7 @@ Template.comments.created = function() {
   // Enable infinite scrolling on this template
   this.infiniteScroll({
     perPage: 20,                        // How many results to load "per page", optional if using cacheLimit option in SubsManager
-    query: {                            // The query to use as the selector in our collection.find() query
+    query: {                            // The query to use as the selector in our collection.find() query, not supported for API
         post: 71
     },
     subManager: new SubsManager(),      // (optional) Add meteorhacks:subs-manager to set the subscription on
@@ -21,10 +21,26 @@ Template.comments.created = function() {
                                         // is destroyed. (works great with ground:db)
     collection: 'Comments',             // The name of the collection to use for counting results
     publication: 'CommentsInfinite',    // The name of the publication to subscribe.
-    countName: 'CommentsInfiniteCount'  // (optional) The name of your Count pub, will use <publication>Count as default value
+    countName: 'CommentsInfiniteCount',  // (optional) The name of your Count pub, will use <publication>Count as default value
+    
+    //API OPTIONS expects a json response!
+    
+    //The url to connect to
+    url: null,
+    // the form key in the query string from the url (default from)
+    fromQueryKey: "from",
+    // the till key in the query string from the url (default till)
+    tillQueryKey: "till",
+    //The data path from your JSON response where you can get the data array.
+    //You can use . and [index] notation if you need deeper access to the object
+    resultDataKey: "data",
+    //A reactive array that keeps the data (also offline supported)
+    reactiveArray: new ReactiveVar([])
   });
 };
 ```
+
+If you don't use an external API:
 
 Create a publication on the server:
 Note that you need to add the Counts pub!
@@ -97,3 +113,57 @@ The `{{> infiniteScroll }}` template renders (uses sacha:spin):
 ```
 
 When the subscription is loading more data, `.loadingInfinite` will receive the class `loading`. It will be removed when the subscription is marked as ready.
+
+## API example:
+
+### Template code
+```js
+Template.comments.onCreated = function() {
+    var tpl = this;
+    //Store the comments
+    tpl.comments = new ReactiveVar([]);
+    //init infiniteScroll
+    tpl.infiniteScroll(
+          perPage: 5
+          url: "https://www.comments.com/api/comments"
+          resultDataKey: "data.content"
+          reactiveArray: tpl.comments
+        )
+}
+
+Template.comments.helpers({
+    comments: function() {
+        Template.instance().comments.get()
+    }
+})
+```
+
+### Template View
+```html
+<template name=comments>
+    {{#each comments}}
+        <h2>{{author}}</h2>
+        <p>{{{content}}}</p>
+    {{/each}}
+    {{> infiniteScroll }}
+</template>
+```
+### The JSON response from the url "https://www.comments.com/api/comments&from=0&till=5":
+```json
+{
+    status: "ok",
+    statuscode: "1",
+    content: [
+        {
+            content: "Hello API",
+            author: "Server"
+        },
+        {
+            content: "Hey Server",
+            author: "API"
+        }
+    ]
+}
+```
+
+**Note: The Meteor http package wraps the JSON results in the data object, see [Meteor docs](http://docs.meteor.com/#/full/http_call)**
