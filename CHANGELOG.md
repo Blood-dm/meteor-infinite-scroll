@@ -1,3 +1,7 @@
+# 0.4.0
+- external API support added
+- README.md API documentation added
+
 # 0.3.0
 - fork of https://github.com/abecks/meteor-infinite-scroll
 - Fixes support for subs without SubsManager

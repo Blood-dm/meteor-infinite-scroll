@@ -48,7 +48,7 @@ jQuery.fn.isAlmostVisible = function jQueryIsAlmostVisible() {
  * Enable infinite scrolling on a template.
  */
 Blaze.TemplateInstance.prototype.infiniteScroll = function infiniteScroll(options) {
-  var tpl = this, _defaults, collection, countName, subManagerCache, limit, subscriber, firstReady, loadMore;
+  var tpl = this, _defaults, countName, subManagerCache, subscriber, firstReady, disableLoaderAndUpdateFrom, loadMore, isApi;
 
   /*
    * Create options from defaults
@@ -65,73 +65,93 @@ Blaze.TemplateInstance.prototype.infiniteScroll = function infiniteScroll(option
     // Publication to subscribe to
     publication: null,
     // (optional) Count name, if null will use <publication>Count as default
-    countName: null
+    countName: null,
 
+    //API OPTIONS expects a json response!
+
+    //The url to connect to
+    url: null,
+    // the form key in the query string from the url (default from)
+    fromQueryKey: 'from',
+    // the till key in the query string from the url (default till)
+    tillQueryKey: 'till',
+    //The data path from your JSON response where you can get the data array.
+    //You can use . and [index] notation if you need deeper access to the object
+    resultDataKey: 'data',
+    //A reactive array that keeps the data (also offline supported)
+    reactiveArray: new ReactiveVar([])
   };
   options = _.extend({}, _defaults, options);
 
   // Validate the options
-  check(options.perPage, Number);
-  check(options.collection, String);
-  check(options.publication, String);
+  isApi = false;
+  if (typeof options.url !== "undefined" && options.url !== null) {
+    check(options.url, String);
+    check(options.perPage, Number);
+    isApi = true;
 
-  // Collection exists?
-  if (!Collections[options.collection]) {
-    throw new Error('Collection does not exist: ', options.collection);
-  }
-
-  collection = Collections[options.collection];
-
-  // Generate Default name if null is given
-
-  if (typeof options.countName !== "undefined" && options.countName !== null) {
-    countName = options.countName;
-  }else{
-    // Generate default Count name
-    countName = options.publication + "Count";
-  }
-
-  // If we are using a subscription manager, cache the limit variable with the subscription
-  if(options.subManager){
-    // Create the cache object if it doesn't exist
-    if(!options.subManager._infinite){
-      options.subManager._infinite = {};
-      options.subManager._infinite[options.publication] = {};
+    //Extend the Object to read value by key from a string
+    //This enables the resultDataKey reading
+    Object.byString = function(o, s) {
+      s = s.replace(/\[(\w+)\]/g, '.$1'); // convert indexes to properties
+      s = s.replace(/^\./, '');           // strip a leading dot
+      var a = s.split('.');
+      for (var i = 0, n = a.length; i < n; ++i) {
+        var k = a[i];
+        if (k in o) {
+          o = o[k];
+        } else {
+          return;
+        }
+      }
+      return o;
     }
-    subManagerCache = options.subManager._infinite[options.publication];
   }
-
-  // We use 'limit' so that Meteor can continue to use the OpLogObserve driver
+  // We use 'till' so that Meteor can continue to use the OpLogObserve driver
   // See: https://github.com/meteor/meteor/wiki/Oplog-Observe-Driver
   // (There are a few types of queries that still use PollingObserveDriver)
-  tpl.limit = new ReactiveVar(options.perPage);
-  tpl.loaded = new ReactiveVar(0);
+  tpl.from = new ReactiveVar(0);
+  tpl.till = new ReactiveVar(options.perPage);
 
-  // Retrieve the initial page size
-  if(subManagerCache && subManagerCache.limit){
-    tpl.limit.set(subManagerCache.limit);
-  }else{
-    tpl.limit.set(options.perPage);
-  }
+  if(!isApi) {
+    check(options.collection, String);
+    check(options.publication, String);
 
-  // Create subscription to the collection
-  tpl.autorun(function() {
-    // Rerun when the limit changes
-    var lmt = tpl.limit.get();
-
-    // If a Subscription Manager has been supplied, use that instead to create
-    // the subscription. This is useful if you want to keep the subscription
-    // loaded for multiple templates.
-    if(options.subManager){
-      subscriber = options.subManager;
-      // Save the limit in the subscription manager so we can look it up later
-      subManagerCache.limit = lmt;
-    }else{
-      subscriber = tpl;
+    // Collection exists?
+    if (!Collections[options.collection]) {
+      throw new Error('Collection does not exist: ', options.collection);
     }
 
-    tpl.infiniteSub = subscriber.subscribe(options.publication, lmt, options.query);
-  });
+    // Generate Default name if null is given
+
+    if (typeof options.countName !== "undefined" && options.countName !== null) {
+      countName = options.countName;
+    }else{
+      // Generate default Count name
+      countName = options.publication + "Count";
+    }
+
+    // If we are using a subscription manager, cache the till variable with the subscription
+    if(options.subManager){
+      // Create the cache object if it doesn't exist
+      if(!options.subManager._infinite){
+        options.subManager._infinite = {};
+        options.subManager._infinite[options.publication] = {};
+      }
+      subManagerCache = options.subManager._infinite[options.publication];
+    }
+
+    // Retrieve the initial page size
+    if(subManagerCache && subManagerCache.limit){
+      tpl.till.set(subManagerCache.limit);
+    }else{
+      check(options.perPage, Number);
+      tpl.till.set(options.perPage);
+    }
+  }else{
+    // The data comes from an external api, initial page size
+    tpl.till.set(options.perPage);
+  }
 
   // Create infiniteReady reactive var that we can use to track
   // whether or not the first result set has been received.
@@ -140,30 +160,79 @@ Blaze.TemplateInstance.prototype.infiniteScroll = function infiniteScroll(option
     return firstReady.get();
   };
 
-  //Todo: does this work with ground:db bug?
-  // Set infiniteReady to true when our subscriptions are ready
-  tpl.autorun(function(){
-    if(tpl.infiniteSub.ready()) {
-      firstReady.set(true);
-      tpl.loaded.set(tpl.limit.get());
-      tpl.$('.loadingInfinite').removeClass('loading');
+  // Create subscription to the collection
+  tpl.autorun(function() {
+    // Rerun when the till changes
+    var till = tpl.till.get();
+    if (!isApi) {
+      // If a Subscription Manager has been supplied, use that instead to create
+      // the subscription. This is useful if you want to keep the subscription
+      // from for multiple templates.
+      if (options.subManager) {
+        subscriber = options.subManager;
+        // Save the till in the subscription manager so we can look it up later
+        subManagerCache.limit = till;
+      } else {
+        subscriber = tpl;
+      }
+
+      tpl.infiniteSub = subscriber.subscribe(options.publication, till, options.query);
+    } else {
+      var from = tpl.from.get();
+      //No need to overload the requests
+      if(from !== till) {
+        //Get the new data fragment and store it reactively
+        //Generate API url with from till query
+        var url = options.url + '&' + options.fromQueryKey + '=' + from + '&' + options.tillQueryKey + '=' + till;
+        //Get the new data client side
+        HTTP.get(url, function (error, result) {
+          if (error) {
+            console.log(error);
+          } else if (result) {
+            //Add the new data to current data
+            //Concats current values with the new array retrieved from API
+            options.reactiveArray.set(options.reactiveArray.get().concat(Object.byString(result, options.resultDataKey)));
+            disableLoaderAndUpdateFrom();
+          }
+        });
+      }
     }
   });
 
+  if(!isApi){
+    // Set infiniteReady to true when our subscriptions are ready
+    tpl.autorun(function(){
+      if(tpl.infiniteSub.ready()) {
+        disableLoaderAndUpdateFrom();
+      }
+    });
+  }
+
+  disableLoaderAndUpdateFrom = function() {
+    firstReady.set(true);
+    tpl.from.set(tpl.till.get());
+    tpl.$('.loadingInfinite').removeClass('loading');
+  };
+
   /**
-   * Load more results for this collection.
+   * Load more results for this collection/dataset.
    */
   loadMore = function() {
-    // Get the count of the publication
-    if(!Counts.has(countName)) {
-      throw new Error("Counts does not exist for publication: ", countName)
+    var count = 0;
+    if(!isApi) {
+      // Get the count of the publication
+      if (!Counts.has(countName)) {
+        throw new Error("Counts does not exist for publication: ", countName)
+      }
+      count = Counts.get(countName);
+    }else{
+      //Count doesn't matter to API
     }
-    var count = Counts.get(countName);
 
-    // Increase the limit if it looks like there are more records
-    if (count >= tpl.limit.get()) {
+    // Increase the till if it looks like there are more records
+    if (count >= tpl.till.get() || isApi) {
       tpl.$('.loadingInfinite').addClass('loading');
-      tpl.limit.set(tpl.loaded.get() + options.perPage);
+      tpl.till.set(tpl.from.get() + options.perPage);
     }else{
       //Max results, no need for loader anymore
       tpl.$('.loadingInfinite').removeClass('loading');
