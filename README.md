@@ -165,7 +165,7 @@ Template.comments.helpers({
         },
         {
             "content": "Hey Server",
-            author: "API"
+            "author": "API"
         }
     ]
 }
