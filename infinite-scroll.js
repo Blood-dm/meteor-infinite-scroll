@@ -6,6 +6,7 @@
  */
 function triggerLoadMore() {
   if ($('.loadingInfinite').isAlmostVisible()) {
+    console.log("something should happen");
     $(document).trigger('triggerInfiniteLoad');
   }
 }

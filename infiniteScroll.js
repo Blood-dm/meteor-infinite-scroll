@@ -1,1 +1,0 @@
-Template.infiniteScroll.helpers
